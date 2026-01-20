@@ -2,12 +2,14 @@ import { useState, useRef } from "react";
 import "./App.css";
 
 export default function App() {
-  const [story, setStory] = useState("Add you story here. Underline any part you think needs to be highlighted.");
-
-  const [isEditing, setIsEditing] = useState(false);
+  const [story, setStory] = useState(
+    "Add your story here. Underline any part you want feedback on."
+  );
   const [draft, setDraft] = useState(story);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [feedback, setFeedback] = useState("");
+  const [rewrites, setRewrites] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const storyRef = useRef(null);
@@ -26,78 +28,83 @@ export default function App() {
     setIsEditing(false);
   }
 
- 
   function underlineSelection() {
-    document.execCommand("underline");
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    const underline = document.createElement("u");
+    range.surroundContents(underline);
+    selection.removeAllRanges();
   }
-
-
-  async function getFeedback(text) {
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama3",
-        prompt: `Give constructive feedback on how to improve this writing.'
-Text:
-${text}`,
-        stream: false,
-      }),
-    });
-
-    const data = await response.json();
-    return data.response;
-  }
-
-
 
   async function reviseStory() {
-    const underlined = storyRef.current.querySelectorAll("u");
-    if (underlined.length === 0) {
+    const underlined = storyRef.current?.querySelectorAll("u");
+    if (!underlined || underlined.length === 0) {
       alert("Please underline text before clicking Revise.");
       return;
     }
-  
-    let textToRevise = Array.from(underlined).map(u => u.innerText).join("\n");
-  
+
+    const textToRevise = Array.from(underlined)
+      .map((u) => u.innerText)
+      .join("\n");
+
     setLoading(true);
-    setFeedback(""); 
-  
+    setFeedback("");
+    setRewrites([]);
+
     try {
       const response = await fetch("http://localhost:11434/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "llama3",
-          prompt: `Give constructive feedback on this writing:\n${textToRevise}`,
-          stream: true,
+          stream: false,
+          prompt: `
+You are a writing coach.
+
+For the following text:
+"${textToRevise}"
+
+1. Give brief feedback on grammar and clarity.
+2. Suggest what could be added or improved.
+3. Provide EXACTLY 3 rewritten versions of the text.
+
+Format your response exactly like this:
+
+FEEDBACK:
+- ...
+
+REWRITE 1:
+...
+
+REWRITE 2:
+...
+
+REWRITE 3:
+...
+          `,
         }),
       });
-  
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-  
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-  
-        const chunk = decoder.decode(value, { stream: true });
-        const json = JSON.parse(chunk);
-        
-        if (json.response) {
-          setFeedback((prev) => prev + json.response);
-        }
-      }
-    } catch (error) {
+
+      const data = await response.json();
+      const text = data.response || "";
+
+      const parts = text.split(/REWRITE \d:/);
+      setFeedback(parts[0].replace("FEEDBACK:", "").trim());
+      setRewrites(parts.slice(1).map((r) => r.trim()));
+    } catch (err) {
       setFeedback("Error getting feedback.");
     }
+
     setLoading(false);
   }
 
-
-
-
-
+  function applyRewrite(rewrite) {
+    setStory(rewrite);
+    setRewrites([]);
+    setFeedback("");
+  }
 
   return (
     <div className="container">
@@ -145,8 +152,23 @@ ${text}`,
 
       {feedback && (
         <div className="feedback">
-          <h3>Revision Feedback</h3>
-          <pre>{feedback}</pre>
+          <h3>Feedback</h3>
+          <p>{feedback}</p>
+        </div>
+      )}
+
+      {rewrites.length > 0 && (
+        <div className="rewrites">
+          <h3>Choose a Rewrite</h3>
+          {rewrites.map((r, i) => (
+            <button
+              key={i}
+              className="rewrite-option"
+              onClick={() => applyRewrite(r)}
+            >
+              {r}
+            </button>
+          ))}
         </div>
       )}
     </div>
