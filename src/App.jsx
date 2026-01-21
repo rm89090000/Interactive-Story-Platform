@@ -40,18 +40,19 @@ export default function App() {
 
   async function reviseStory() {
     const underlined = storyRef.current?.querySelectorAll("u");
-    if (!underlined || underlined.length === 0) {
+    if (underlined== null || underlined.length === 0) {
       alert("Please underline text before clicking Revise.");
       return;
     }
 
-    const textToRevise = Array.from(underlined)
-      .map((u) => u.innerText)
-      .join("\n");
+    let textToRevise = "";
 
-    setLoading(true);
-    setFeedback("");
-    setRewrites([]);
+    for (const u of underlined) {
+      textToRevise += u.innerText + "\n";
+    }
+    
+    textToRevise = textToRevise.trim();
+    
 
     try {
       const response = await fetch("http://localhost:11434/api/generate", {
